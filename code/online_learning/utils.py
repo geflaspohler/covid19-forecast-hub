@@ -14,8 +14,7 @@ Dictionaries to convert between task id and task labels
 gt_id2label= {
     "cumm_death": "cum death",
     "incd_death": "inc death",
-    "cumm_case": "cum case",
-    "incd_casee": "inc case"
+    "incd_case": "inc case"
 }
 horiz2label= {
     "1w": "1 wk ahead",
@@ -62,18 +61,23 @@ def get_persistant_models(df):
     pred_dates = df.index.get_level_values('target_end_date').unique().sort_values()
     last_date = pred_dates[-1]
 
+    persistant_model_dates = {}
     model_dates = {}
     # Go through dates in reverse order
-    initial_models = df.index.get_level_values('model').unique()
+    # initial_models = df.index.get_level_values('model').unique()
+    initial_models = df.loc[df.index.get_level_values('target_end_date') == last_date].index.get_level_values('model').unique()
     models = initial_models.copy()
+    initial_models = sorted(list(initial_models))
     for date in pred_dates[::-1]:
         m = df.loc[df.index.get_level_values('target_end_date') == date].index.get_level_values('model').unique()
+        model_dates[date] = sorted(list(m))
+
         models = models.intersection(m)
-        model_dates[date] = list(models)
-    return model_dates, initial_models
+        persistant_model_dates[date] = sorted(list(models))
+    
+    return persistant_model_dates, initial_models, model_dates
 
 def get_model_predictions(gt_id, horizon, location, quantile, load_df=True):
-    # printf(f"Loading model predictions for {gt_id}, {horizon}, q{quantile}")
     pred_file = get_pred_file(gt_id, horizon, quantile)
 
     if os.path.exists(pred_file) and load_df:
@@ -110,7 +114,6 @@ def load_predictions_from_file(gt_id, horizon, quantile):
     pred_df = pd.DataFrame(columns=cols)
 
     # TODO: Check generality
-    # template = os.path.join('..', '..', 'data-processed','*')
     template = os.path.join('data-processed','*')
     count = 0
 
@@ -141,6 +144,7 @@ def load_predictions_from_file(gt_id, horizon, quantile):
 
             task_df['model'] = mn
             pred_df = pd.concat([pred_df, task_df], join="inner", ignore_index=True)
+
 
     # Remove duplicate predictions from the same model for the same target_end_date and location; keep most recent forecast
     pred_df.sort_values(by='forecast_date', inplace=True)
@@ -478,3 +482,45 @@ def next_dow(date, dow, after=True):
 
         if target.weekday() == dow: # test day of week
             return target
+
+def get_task_metrics_dir(model="online_expert", submodel=None, gt_id="cumm_death", horizon="1w"):
+    """Returns the directory in which evaluation metrics for a given submodel
+    or model are stored
+
+    Args:
+       model: string model name
+       submodel: string submodel name or None; if None, returns metrics
+         directory associated with selected submodel or returns None if no
+         submodel selected
+       gt_id: contest_tmp2m or contest_precip
+       horizon: 34w or 56w
+    """
+    if submodel is None:
+        submodel = get_selected_submodel_name(model=model, gt_id=gt_id, horizon=horizon)
+        if submodel is None:
+            return None
+    return os.path.join(
+        "eval", "metrics", model, "submodel_forecasts", submodel, f"{gt_id}_{horizon}"
+)
+def get_task_forecast_dir(model="online_expert",
+                          submodel=None,
+                          gt_id="cumm_death",
+                          horizon="1w"):
+    """Returns the directory in which forecasts from a given submodel or
+    model and a given task are stored
+
+    Args:
+       model: string model name
+       submodel: string submodel name or None; if None, returns forecast
+         directory associated with selected submodel or None if no
+         submodel selected
+       gt_id: contest_tmp2m or contest_precip
+       horizon: 34w or 56w
+    """
+    if submodel is None:
+        submodel = get_selected_submodel_name(model=model,gt_id=gt_id,
+                                              horizon=horizon)
+        if submodel is None:
+            return None
+    return os.path.join("models", model, "submodel_forecasts", submodel,
+                        f"{gt_id}_{horizon}")

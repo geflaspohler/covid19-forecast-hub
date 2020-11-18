@@ -11,7 +11,7 @@ class OnlineLoss(ABC):
     def __init__(self):
         pass
 
-    def loss_regret(self, partition, partition_keys, g, w):
+    def loss_regret(self, partition, partition_keys, g, w, active_experts=None):
         ''' Computes the loss w.r.t. a partition 
         Args:
             partition: np Array masks for partitions of the vectors [1, 1, 2, 3, 3]
@@ -19,9 +19,12 @@ class OnlineLoss(ABC):
             g: np Array containing gradient
             w: np Array containing weight vector
         '''
+        if active_experts is None:
+            active_experts = np.ones(g.shape, dtype=bool)
+
         regret = np.zeros(g.shape)
         for k in partition_keys:
-            p_ind = (partition == k)
+            p_ind = (partition == k) & active_experts
             regret[p_ind] = np.dot(g[p_ind], w[p_ind]) - g[p_ind] 
         return regret
 
@@ -69,60 +72,16 @@ class MAELoss(OnlineLoss):
            y: G x 1 np.array - ground truth at G grid points
            w: d x 1 np.array - location at which to compute gradient.
         """
+        X = X.reshape(1, -1)
         d = X.shape[1] # Number of experts 
 
         err = X @ w - y
         if np.isclose(err, np.zeros(err.shape)).all():
             return np.zeros((d,))
         elif err > 0:
-            return err
+            return X.reshape(-1,)
         elif err < 0:
-            return -err
-
-class RodeoLoss(OnlineLoss):
-    def __init__(self):
-        pass
-
-    def loss(self, y, y_hat):
-        """Computes the geographically-averaged rodeo RMSE loss. 
-
-        Args:
-           y: G x 1 np.array - ground truth at G grid points
-           y_hat: G x 1 np.array - forecast at G grid points
-
-        """     
-        return np.sqrt(mean_squared_error(y, y_hat))
-        #return np.sqrt(np.mean(y - y_hat, axis=0))    
-    
-    def loss_experts(self, X, y):
-        """Computes the geographically-averaged rodeo RMSE loss. 
-
-        Args:
-           X: G x self.d np array - prediction at G grid point locations from self.d experts        
-           y: G x 1 np.array - ground truth at G grid points
-        """     
-        d = X.shape[1]
-        return np.sqrt(np.mean((X - np.matlib.repmat(y.reshape(-1, 1), 1, d))**2, axis=0))    
-    
-    def loss_gradient(self, X, y, w):
-        """Computes the gradient of the rodeo RMSE loss at location w. 
-
-        Args:
-           X: G x d np array - prediction at G grid point locations from self.d experts
-           y: G x 1 np.array - ground truth at G grid points
-           w: d x 1 np.array - location at which to compute gradient.
-        """
-        G = X.shape[0] # Number of grid points
-        d = X.shape[1] # Number of experts 
-
-        err = X @ w - y
-
-        if np.isclose(err, np.zeros(err.shape)).all():
-            return np.zeros((d,))
-
-        #TODO: might be faster to compute (err.T @ X).T; also may not matter!
-        return (X.T @ err / (np.sqrt(G)*np.linalg.norm(err, ord=2))).reshape(-1,)
-
+            return -X.reshape(-1,)
 
 class HintingLossTwoNorm(OnlineLoss): 
     def __init__(self):

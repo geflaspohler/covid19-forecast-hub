@@ -9,21 +9,21 @@ from src.utils.general_util import tic, toc, printf, make_directories, symlink
 import zoo_of_losses
 from functools import partial
 
-def get_expert(alg, loss, T, expert_list, init_method="uniform", reg=None, partition=None, init_df=None):
+def get_expert(alg, loss, T, expert_list, active_experts=None, init_method="uniform", reg=None, partition=None, init_df=None):
     if alg == "ftl":
-        oe = FTL(loss, T, init_method, expert_list, partition=partition)    
+        oe = FTL(loss, T, init_method, expert_list, partition=partition, active_experts=active_experts)    
     elif alg == "ftrl":
-        oe = FTRL(loss, T, init_method, expert_list, init_df, reg, partition=partition)
+        oe = FTRL(loss, T, init_method, expert_list, init_df, reg, partition=partition, active_experts=active_experts)
     elif alg == "adahedgefo":
-        oe = AdaHedgeFO(loss, T, init_method, expert_list, reg=reg, partition=partition)    
+        oe = AdaHedgeFO(loss, T, init_method, expert_list, reg=reg, partition=partition, active_experts=active_experts)    
     elif alg == "rm":
-        oe = RegretMatching(loss, T, init_method, expert_list, partition=partition)  
+        oe = RegretMatching(loss, T, init_method, expert_list, partition=partition, active_experts=active_experts)  
     elif alg == "rmplus":
-        oe = RegretMatchingPlus(loss, T, init_method, expert_list, partition=partition)        
+        oe = RegretMatchingPlus(loss, T, init_method, expert_list, partition=partition, active_experts=active_experts)        
     elif alg == "adahedgesr":
-        oe = AdaHedgeSR(loss, T, init_method, expert_list, partition=partition)    
+        oe = AdaHedgeSR(loss, T, init_method, expert_list, partition=partition, active_experts=active_experts)    
     elif alg == "flip_flop":
-        oe = FlipFlop(loss, T, init_method, expert_list, partition=partition)    
+        oe = FlipFlop(loss, T, init_method, expert_list, partition=partition, active_experts=active_experts)    
     else: # Unknown algorithm, instantiate abstract base class and throw error
         raise ValueError(f"Unknown expert type {alg}.")
     return oe
@@ -719,45 +719,58 @@ class RegretMatchingPlus(OnlineExpert):
     """
     Implements RegretMatching+ online learning algorithm
     """    
-    def __init__(self, loss, T, init_method, expert_list=None, partition=None):
+    def __init__(self, loss, T, init_method, expert_list=None, active_experts=None, partition=None):
         """Initializes online_expert 
         """                
         # Base class constructor 
         super().__init__(loss, T, init_method, expert_list, partition)
-        self.reset_alg_params(T)
+        self.reset_alg_params(T, active_experts)
 
-    def reset_alg_params(self, T):
+    def reset_alg_params(self, T, active_experts):
         """ Set hyperparameter values of online learner """ 
-        #TODO: briefly define what these parameters are; mention that initialization for alpha comes from ...
-        self.t = 1
-        self.T = T
-        self.p = self.init_weight_vector(self.expert_list, "uniform") # defined to be uniform 
+        self.t = 1 # Current prediction iteration
+        self.T = T # Duration of prediction period
+
+        # State vector for RM+, mirror descent. Lives in the orthant
         self.w = np.zeros((self.d,)) # Must initialize weight vector to zero
-        self.prev_regret = np.zeros((1, self.d))
+
+        # Set of active experts for initial prediction.  Default to all active experts.
+        self.prev_active_experts = np.zeros((self.d,), dtype=bool)
+        if active_experts is None:
+           self.active_experts = np.ones((self.d,), dtype=bool)
+        else:
+            self.active_experts = np.array(active_experts, dtype=bool)
+
+        # Convex combination; derived from w, initialized to uniform over active experts
+        self.p = np.zeros((self.d,)) #
+        self.p[self.active_experts] = 1./self.d
 
     def get_logging_params(self):
         # Update parameter logging 
         params = {
             't': self.t
         }
-        dup_count = 1
         for i in range(self.d):
-            if self.expert_list[i] in params:
-                alias = self.expert_list[i] + str(dup_count)
-                dup_count += 1
-            else:
-                alias = self.expert_list[i]
-            params[alias] = float(self.p[i])
+            params[self.expert_list[i]] = float(self.p[i])
         return params
 
-    def update_and_predict(self, X_cur, hint=None, X_fb=None, y_fb=None, w_fb=None): 
+    def update_and_predict(self, X_cur, active_ind=None, hint=None, X_fb=None, y_fb=None, w_fb=None): 
         """Performs one step of Regret Matching+
 
         Args:
-           X: G x self.d - prediction at G grid point locations from self.d experts
-           y: G x 1 - ground truth forecast at G grid points
-           w: G x 1 np.array - prediction weights used in round when X was expert and y was gt
+           X: 1 x self.d - prediction from self.d experts
+           y: 1 x 1 - ground truth value 
+           w: self.d x 1 np.array - prediction weights (convex combination) used 
+                in round when X was expert and y was gt
         """     
+        '''
+        Get the set of currently active experts
+        '''
+        if active_ind is None:
+            active_ind = np.arange(self.d)
+
+        self.prev_active_experts = self.active_experts.copy()
+        self.active_experts[active_ind] = True
 
         '''
         Incorporate loss from previous timestep
@@ -765,16 +778,17 @@ class RegretMatchingPlus(OnlineExpert):
         if X_fb is not None and y_fb is not None: 
             # Compute the loss of the previous play
             g_fb = self.loss_gradient(X_fb, y_fb, w_fb)  # linearize arround current w value        
-            regret_fb = self.loss_regret(g_fb, w_fb) # compute regret w.r.t. partition
+            regret_fb = self.loss_regret(g_fb, w_fb, active_experts=self.active_experts) # compute regret w.r.t. partition
         else:
             # If no feedback is provided use zero gradient
             g_fb = np.zeros((self.d,))
+            self.p = np.zeros((self.d,)) #
+            self.p[self.active_experts] = 1./self.d
             w_fb = self.p
             regret_fb = np.zeros((self.d,))
 
         if hint is None:
             hint = np.zeros((self.d,))
-
         '''
         Update regret
         '''
@@ -786,7 +800,7 @@ class RegretMatchingPlus(OnlineExpert):
         #  Get updated weight vector
         self.p = np.zeros((self.d,))
         for k in self.partition_keys:     
-            p_ind = (self.partition == k)                             
+            p_ind = (self.partition == k) & (self.active_experts)
             if np.sum(self.w[p_ind]) > 0.0:
                 self.p[p_ind] = (self.w[p_ind]/ np.sum(self.w[p_ind]))
             else:

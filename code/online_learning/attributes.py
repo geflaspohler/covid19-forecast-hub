@@ -25,11 +25,10 @@ def get_selected_submodel_name(gt_id, target_horizon, return_params=False):
 
 def get_submodel_name(expert_models="doy,cfsv2,multillr,llr", 
                       reg='entropic', 
-                      alg='forel', 
-                      quarters="False", 
+                      alg='rmplus', 
                       hint="None", 
-                      delay=1,
-                      training_dates="std_contest",
+                      delay=0,
+                      training_dates="std_weekly",
                       return_params=False,
                       exp_name="None"):
   """Returns submodel name for a given setting of model parameters
@@ -38,7 +37,6 @@ def get_submodel_name(expert_models="doy,cfsv2,multillr,llr",
       expert_models: comma sepearted string of expert models
       reg: regularization string
       alg: online learning algorithm string
-      quraters: "True" or "False" quarter reset string
       hint: hint type string
       training_dates: dates over which online learning was run
       return_params: (boolean) True or False. If True, returns a dictionary
@@ -62,10 +60,7 @@ def get_submodel_name(expert_models="doy,cfsv2,multillr,llr",
   else:
     exp_string = f"{exp_name}_"
  
-  if quarters == "True":
-    submodel_name = (f"{MODEL_NAME}-{exp_string}{alg_str}_reg{reg_str}_Q_D{delay}_{hint}_{date_str}_{model_str}")
-  else:
-    submodel_name = (f"{MODEL_NAME}-{exp_string}{alg_str}_reg{reg_str}_D{delay}_{hint}_{date_str}_{model_str}")
+  submodel_name = (f"{MODEL_NAME}-{exp_string}{alg_str}_reg{reg_str}_D{delay}_{hint}_{date_str}_{model_str}")
 
   submodel_params = {
       'alg': alg,
@@ -73,7 +68,6 @@ def get_submodel_name(expert_models="doy,cfsv2,multillr,llr",
       'reg': reg,
       'hint': hint,
       'delay': delay,
-      'quarters': quarters,
       'training_dates': training_dates
   }
   if return_params:
