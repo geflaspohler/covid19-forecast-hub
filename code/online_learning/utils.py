@@ -15,7 +15,7 @@ gt_id2label= {
     "cumm_death": "cum death",
     "incd_death": "inc death",
     "cumm_case": "cum case",
-    "incd_casee": "inc case"
+    "incd_case": "inc case"
 }
 horiz2label= {
     "1w": "1 wk ahead",
