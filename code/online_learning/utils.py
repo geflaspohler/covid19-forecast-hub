@@ -74,10 +74,12 @@ def get_persistant_models(df):
 
 def get_model_predictions(gt_id, horizon, location, quantile, load_df=True):
     # printf(f"Loading model predictions for {gt_id}, {horizon}, q{quantile}")
+    
     pred_file = get_pred_file(gt_id, horizon, quantile)
 
     if os.path.exists(pred_file) and load_df:
-        df = pd.read_hdf(pred_file)
+        df = pd.read_hdf(pred_file,low_memory=False)
+        
     else:
         printf(f"File {pred_file} not avaliable. Reading data from source and generating.")
         df = load_predictions_from_file(gt_id, horizon, quantile)
@@ -124,11 +126,12 @@ def load_predictions_from_file(gt_id, horizon, quantile):
         
         file_template = os.path.join(model_dir, f'*-{mn}.csv')
         for fh in glob.glob(file_template):
+            #pdb.set_trace()
             df = pd.read_csv(fh)
             df.loc[df['type'] == "point", 'quantile'] = -1 # Add quantile code to point-queries
             df['location'] = df['location'].astype(str).str.lstrip("0") # Remove trailing zeros before location string
             # task_df = df.query(f"target == '{task_label}' and quantile == '{quantile}' and location == '{location}'").copy()
-            task_df = df.query(f"target == '{task_label}' and quantile == '{quantile}'").copy()
+            task_df = df[df["quantile"] == quantile].query(f"target == '{task_label}'").copy()
 
             # Check if the forecast is legal
             target_dt = [datetime.strptime(x, '%Y-%m-%d') for x in task_df['target_end_date']]
@@ -141,6 +144,8 @@ def load_predictions_from_file(gt_id, horizon, quantile):
 
             task_df['model'] = mn
             pred_df = pd.concat([pred_df, task_df], join="inner", ignore_index=True)
+            
+            break
 
     # Remove duplicate predictions from the same model for the same target_end_date and location; keep most recent forecast
     pred_df.sort_values(by='forecast_date', inplace=True)
