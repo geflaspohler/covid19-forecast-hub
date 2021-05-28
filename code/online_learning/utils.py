@@ -145,7 +145,7 @@ def load_predictions_from_file(gt_id, horizon, quantile):
             task_df['model'] = mn
             pred_df = pd.concat([pred_df, task_df], join="inner", ignore_index=True)
             
-            break
+            
 
     # Remove duplicate predictions from the same model for the same target_end_date and location; keep most recent forecast
     pred_df.sort_values(by='forecast_date', inplace=True)
